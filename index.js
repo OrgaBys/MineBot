@@ -1,9 +1,8 @@
 const mineflayer = require('mineflayer');
 const http = require('http');
 
-// ==================== WEB CEРВЕР ДЛЯ ХОСТИНГА (НЕ УДАЛЯТЬ) ====================
-// Этот блок нужен, чтобы Koyeb/Render и UptimeRobot видели, что бот «жив» и не выключали его.
-const WEB_PORT = process.env.PORT || 3000; // Хостинг сам передаст нужный порт
+// ==================== WEB СЕРВЕР ДЛЯ ХОСТИНГА ====================
+const WEB_PORT = process.env.PORT || 3000;
 const server = http.createServer((req, res) => {
   res.statusCode = 200;
   res.setHeader('Content-Type', 'text/plain; charset=utf-8');
@@ -13,14 +12,16 @@ const server = http.createServer((req, res) => {
 server.listen(WEB_PORT, () => {
   console.log(`[WEB] Сервер запущен на порту ${WEB_PORT}. Готов к пингам от UptimeRobot.`);
 });
-// ==============================================================================
+// =================================================================
 
 const CONFIG = {
   host: 'survivers.space',
   port: 25565,
   username: 'online',
   password: '1234+5678',
-  version: false,          // false = авто, или поставь точную, например '1.20.4'
+  // ВАЖНО: версия — строка! 1.21.5 соответствует протоколу 775 из логов ViaVersion.
+  // Если не заработает, попробуйте '1.21.6' или false (автоопределение).
+  version: '26.2',
 };
 
 let bot;
@@ -28,7 +29,6 @@ let authDone = false;
 let reconnectTimeout = null;
 
 function createBot() {
-  // Очищаем старые таймеры переподключения, если они были
   if (reconnectTimeout) clearTimeout(reconnectTimeout);
 
   console.log(`[INFO] Подключаюсь к ${CONFIG.host}:${CONFIG.port} как ${CONFIG.username}...`);
@@ -37,9 +37,14 @@ function createBot() {
     host: CONFIG.host,
     port: CONFIG.port,
     username: CONFIG.username,
-    auth: 'offline',       // ОБЯЗАТЕЛЬНО для пиратского сервера
+    auth: 'offline',
     version: CONFIG.version,
     hideErrors: false,
+  });
+
+  // Логирование смены состояния протокола (помогает понять, где застряли)
+  bot._client.on('state', (state) => {
+    console.log('[STATE]', state);
   });
 
   bot.on('login', () => {
@@ -49,11 +54,20 @@ function createBot() {
   bot.once('spawn', () => {
     console.log('[INFO] Бот заспавнился. UUID:', bot.player.uuid);
     console.log('[INFO] Сейчас должен быть в /list');
+    // Если через 5 секунд после спавна авторизация не пройдена — пробуем отправить логин
+    setTimeout(() => {
+      if (!authDone) {
+        console.log('[AUTH] Спавн без авторизации. Пробую /login...');
+        bot.chat(`/login ${CONFIG.password}`);
+        authDone = true;
+      }
+    }, 5000);
   });
 
+  // Обработка текстовых сообщений в чате
   bot.on('messagestr', (message) => {
     const msg = message.toLowerCase();
-    console.log('[MSG]', message);   // смотри все сообщения сервера
+    console.log('[MSG]', message);
 
     if (authDone) return;
 
@@ -65,6 +79,19 @@ function createBot() {
       console.log('[AUTH] Логин...');
       bot.chat(`/login ${CONFIG.password}`);
       authDone = true;
+    }
+  });
+
+  // Обработка открытия кастомных окон (GUI) — часто используется плагинами авторизации
+  bot.on('windowOpen', (window) => {
+    console.log('[WINDOW] Открыто окно:', window.title);
+    // Пытаемся отправить команду логина, даже если открыт GUI
+    if (!authDone) {
+      setTimeout(() => {
+        console.log('[AUTH] Попытка логина через GUI...');
+        bot.chat(`/login ${CONFIG.password}`);
+        authDone = true;
+      }, 1000);
     }
   });
 
@@ -85,11 +112,8 @@ function createBot() {
   bot.on('end', (reason) => {
     console.log(`[END] Отключился: ${reason}. Переподключение через 15 сек...`);
     authDone = false;
-    
-    // Удаляем старые слушатели, чтобы не копились в памяти при ошибках
-    bot.removeAllListeners();
-    
-    // Переподключаемся через 15 секунд (чуть увеличил, чтобы сервер успел прогрузиться при рестарте)
+    // НЕ вызываем bot.removeAllListeners() — это может сломать внутренние обработчики.
+    // Просто создаём нового бота через таймаут.
     reconnectTimeout = setTimeout(createBot, 15000);
   });
 }
