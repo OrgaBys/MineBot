@@ -1,0 +1,12 @@
+{
+  "name": "mineflayer-bot",
+  "version": "1.0.0",
+  "description": "Бот для автоматической авторизации на сервере",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js"
+  },
+  "dependencies": {
+    "mineflayer": "^4.20.1"
+  }
+}
