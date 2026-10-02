@@ -7,6 +7,6 @@
     "start": "node index.js"
   },
   "dependencies": {
-    "mineflayer": "^4.39.0"
+    "khiemflayer": "^1.0.0"
   }
 }
